@@ -1,0 +1,61 @@
+##======================================================================
+## .NET / Blazor Build Outputs & Caches
+##======================================================================
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+publish/
+
+##======================================================================
+## PWA Asset Protection Rules
+##======================================================================
+# Ensure your active development service workers and web manifest are tracked
+!wwwroot/service-worker.js
+!wwwroot/service-worker.published.js
+!wwwroot/manifest.webmanifest
+!wwwroot/manifest.json
+
+# CRITICAL EXCLUSION: Ignore local hot-reload / dynamic asset artifacts 
+# which cause PWA hash integrity check failures during dev cycles.
+wwwroot/service-worker-assets.js
+
+##======================================================================
+## IDE Settings & Metadata (VS Code / Visual Studio / Rider)
+##======================================================================
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.idea/
+*.sln.iml
+
+##======================================================================
+## Local Configuration & Security (Secrets, DBs)
+##======================================================================
+*.db
+*.db-shm
+*.db-wal
+.env
+appsettings.Development.json
+
+##======================================================================
+## Operating System Junk
+##======================================================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
