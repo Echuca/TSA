@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.JSInterop;
 using TSA.Core.Engine;
 using TSA.Core.Models;
@@ -6,32 +5,32 @@ using TSA.Core.Models;
 namespace TSA.Services;
 
 /// <summary>
-/// The running game: owns the state, runs the engine, keeps undo snapshots and
-/// saves to browser storage at every checkpoint.
+/// The running game: owns the state, runs the engine, records every answer for undo and
+/// saves to browser storage after each one.
 /// </summary>
 public sealed class GameSession(IJSRuntime js)
 {
     private const string CurrentKey = "tsa.current";
-    private const string HistoryKey = "tsa.history";
-    private const int MaxSnapshots = 80;
-    private const int SavedSnapshots = 25;
+    private const string HistoryKey = "tsa.history.v2";
+    private const int SavedEntries = 15;
 
-    private readonly UiDecisionProvider _provider = new();
-    private readonly List<string> _snapshots = [];
+    private readonly UiDecisionProvider _ui = new();
+    private GameHistory _history = new();
     private CancellationTokenSource? _cancellation;
     private Task? _running;
-    private int _answersSinceCheckpoint;
     private bool _initialized;
+    private bool _saving;
+    private bool _saveAgain;
 
     public GameState? State { get; private set; }
 
-    public DecisionRequest? Pending => _provider.Pending;
+    public DecisionRequest? Pending => _ui.Pending;
 
     public string? Error { get; private set; }
 
     public bool HasSavedGame { get; private set; }
 
-    public bool CanUndo => _snapshots.Count > 1 || _answersSinceCheckpoint > 0 || Error is not null;
+    public bool CanUndo => _history.CanUndo;
 
     /// <summary>Raised whenever the UI should re-render.</summary>
     public event Action? Changed;
@@ -44,107 +43,100 @@ public sealed class GameSession(IJSRuntime js)
         }
 
         _initialized = true;
-        _provider.Changed += () => Changed?.Invoke();
+        _ui.Changed += () => Changed?.Invoke();
         HasSavedGame = !string.IsNullOrEmpty(await GetItem(CurrentKey));
     }
 
     public async Task NewGameAsync(bool optionalCards, int usBonusInfluence)
     {
         await StopAsync();
-        _snapshots.Clear();
-        State = GameRunner.CreateGame(optionalCards, usBonusInfluence);
-        Start();
+        UseHistory(new GameHistory());
+        Start(GameRunner.CreateGame(optionalCards, usBonusInfluence), []);
     }
 
     public async Task ResumeAsync()
     {
-        var json = await GetItem(CurrentKey);
-
-        if (string.IsNullOrEmpty(json))
-        {
-            return;
-        }
-
         await StopAsync();
-        _snapshots.Clear();
 
         try
         {
-            var history = await GetItem(HistoryKey);
+            var saved = await GetItem(HistoryKey);
 
-            if (!string.IsNullOrEmpty(history))
+            if (!string.IsNullOrEmpty(saved))
             {
-                _snapshots.AddRange(JsonSerializer.Deserialize<List<string>>(history) ?? []);
+                UseHistory(GameHistory.Deserialize(saved));
+            }
+            else
+            {
+                // Saves from before answer-level undo: just the last checkpoint.
+                var current = await GetItem(CurrentKey) ?? throw new InvalidOperationException("No saved game.");
+                UseHistory(new GameHistory());
+                _history.Checkpoint(current);
             }
 
-            State = GameState.Deserialize(json);
+            var (state, replay) = _history.Resume();
+            Start(GameState.Deserialize(state), replay);
         }
         catch (Exception ex)
         {
             Error = $"Could not load the saved game: {ex.Message}";
             Changed?.Invoke();
-            return;
         }
-
-        Start();
     }
 
     public void Answer(object? value)
     {
-        _answersSinceCheckpoint++;
-        _provider.Answer(value);
+        _ui.Answer(value);
         Changed?.Invoke();
     }
 
-    /// <summary>
-    /// Undo: restart the current step if anything was entered in it, otherwise go back one step.
-    /// </summary>
+    /// <summary>Undo the last answer (stepping back into the previous step if needed).</summary>
     public async Task UndoAsync()
     {
-        if (_snapshots.Count == 0)
+        if (!_history.CanUndo)
         {
             return;
         }
 
-        if (_answersSinceCheckpoint == 0 && Error is null && _snapshots.Count > 1)
-        {
-            _snapshots.RemoveAt(_snapshots.Count - 1);
-        }
-
-        await RestartFromAsync(_snapshots[^1]);
+        await StopAsync();
+        var (state, replay) = _history.StepBack();
+        Start(GameState.Deserialize(state), replay);
     }
 
     /// <summary>
     /// A copy of the state at the start of the current step, for the Corrections panel to edit.
     /// </summary>
     public GameState? CorrectionDraft() =>
-        _snapshots.Count > 0 ? GameState.Deserialize(_snapshots[^1]) : State?.Clone();
+        _history.Current is { } entry ? GameState.Deserialize(entry.State) : State?.Clone();
 
     /// <summary>
     /// Replaces the state with a manually corrected one. Undo removes the correction.
     /// </summary>
     public async Task ApplyCorrectionAsync(GameState corrected, string description)
     {
+        await StopAsync();
         corrected.AddLog(null, $"Correction: {description}");
         var json = corrected.Serialize();
-        _snapshots.Add(json);
-        await RestartFromAsync(json);
+        _history.AddCorrection(json);
+        Start(GameState.Deserialize(json), []);
     }
 
-    private async Task RestartFromAsync(string json)
+    private void UseHistory(GameHistory history)
     {
-        await StopAsync();
-        State = GameState.Deserialize(json);
-        Start();
+        _history = history;
+        _history.Changed += () => _ = SaveAsync();
     }
 
-    private void Start()
+    private void Start(GameState state, List<object?> replay)
     {
+        State = state;
         Error = null;
-        _answersSinceCheckpoint = 0;
         _cancellation = new CancellationTokenSource();
 
-        var runner = new GameRunner(State!, _provider, CheckpointAsync, _cancellation.Token);
+        var provider = new RecordingDecisionProvider(_ui, _history);
+        provider.Replay(replay);
+
+        var runner = new GameRunner(State, provider, CheckpointAsync, _cancellation.Token);
         _running = RunAsync(runner);
         Changed?.Invoke();
     }
@@ -157,7 +149,7 @@ public sealed class GameSession(IJSRuntime js)
         }
         catch (OperationCanceledException)
         {
-            // Undo or new game.
+            // Undo, correction or new game.
         }
         catch (Exception ex)
         {
@@ -170,7 +162,7 @@ public sealed class GameSession(IJSRuntime js)
     private async Task StopAsync()
     {
         _cancellation?.Cancel();
-        _provider.Cancel();
+        _ui.Cancel();
 
         if (_running is not null)
         {
@@ -181,25 +173,42 @@ public sealed class GameSession(IJSRuntime js)
         _cancellation = null;
     }
 
-    private async Task CheckpointAsync()
+    private Task CheckpointAsync()
     {
-        var json = State!.Serialize();
+        _history.Checkpoint(State!.Serialize());
+        return Task.CompletedTask;
+    }
 
-        if (_snapshots.Count == 0 || _snapshots[^1] != json)
+    /// <summary>Saves the history; coalesces bursts (e.g. replay) into one write at a time.</summary>
+    private async Task SaveAsync()
+    {
+        if (_saving)
         {
-            _snapshots.Add(json);
-
-            if (_snapshots.Count > MaxSnapshots)
-            {
-                _snapshots.RemoveAt(0);
-            }
+            _saveAgain = true;
+            return;
         }
 
-        _answersSinceCheckpoint = 0;
+        _saving = true;
 
-        await SetItem(CurrentKey, json);
-        await SetItem(HistoryKey, JsonSerializer.Serialize(_snapshots.TakeLast(SavedSnapshots)));
-        HasSavedGame = true;
+        try
+        {
+            do
+            {
+                _saveAgain = false;
+
+                if (_history.Current is { } current)
+                {
+                    await SetItem(CurrentKey, current.State);
+                    await SetItem(HistoryKey, _history.Serialize(SavedEntries));
+                    HasSavedGame = true;
+                }
+            }
+            while (_saveAgain);
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
     private async Task<string?> GetItem(string key)

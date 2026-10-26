@@ -216,7 +216,7 @@ public class GameRunnerTests
         state.USSR.MilitaryOps = 3;
         state.US.MilitaryOps = 1;
 
-        var stoppedAt = await RunUntilStuck(state, new ScriptedDecisions());
+        var stoppedAt = await RunUntilStuck(state, new ScriptedDecisions().Option("No scoring cards held"));
 
         Assert.Equal(-2, state.VictoryPoints);
         Assert.Equal(2, state.Turn);
@@ -266,9 +266,50 @@ public class GameRunnerTests
         state.US.MilitaryOps = 5;
         state.USSR.MilitaryOps = 5;
 
-        await new GameRunner(state, new ScriptedDecisions()).RunAsync();
+        await new GameRunner(state, new ScriptedDecisions().Option("No scoring cards held")).RunAsync();
 
         Assert.Equal(GamePhase.GameOver, state.Phase);
         Assert.NotNull(state.GameOverReason);
+    }
+
+    [Fact]
+    public async Task Held_Scoring_Card_Is_Scored_At_End_Of_Turn()
+    {
+        var state = GameInActionRounds();
+        state.US.ActionRoundsTaken = 6;
+        state.USSR.ActionRoundsTaken = 6;
+        state.US.MilitaryOps = 5;
+        state.USSR.MilitaryOps = 5;
+        state.Country("iran").UsInfluence = 2; // US controls a Middle East battleground
+
+        var script = new ScriptedDecisions()
+            .Then(r =>
+            {
+                Assert.Contains("Middle East Scoring", r.Detail);
+                return 2; // US is holding a scoring card: score it now
+            })
+            .Card(CardIds.MiddleEastScoring)
+            .Option("No scoring cards held");
+
+        await RunUntilStuck(state, script);
+
+        Assert.Equal(CardLocation.Discard, state.LocationOf(CardIds.MiddleEastScoring));
+        Assert.Equal(3 + 1, state.VictoryPoints); // presence + 1 battleground
+        Assert.Equal(2, state.Turn);
+    }
+
+    [Fact]
+    public async Task Held_Scoring_Card_Loses_Under_Tournament_Rule()
+    {
+        var state = GameInActionRounds();
+        state.US.ActionRoundsTaken = 6;
+        state.USSR.ActionRoundsTaken = 6;
+        state.US.MilitaryOps = 5;
+        state.USSR.MilitaryOps = 5;
+
+        await new GameRunner(state, new ScriptedDecisions().Option("USSR is holding a scoring card: USSR loses")).RunAsync();
+
+        Assert.Equal(GamePhase.GameOver, state.Phase);
+        Assert.Equal(Side.US, state.Winner);
     }
 }

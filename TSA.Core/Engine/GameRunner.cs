@@ -77,7 +77,7 @@ public sealed class GameRunner
                         await NextActionRoundAsync();
                         break;
                     case GamePhase.TurnEnd:
-                        EndTurn();
+                        await EndTurnAsync();
                         break;
                 }
             }
@@ -211,8 +211,10 @@ public sealed class GameRunner
         State.AddLog(null, $"Shuffle the {(era == CardEra.MidWar ? "Mid" : "Late")} War cards into the draw pile (not the discards).");
     }
 
-    private void EndTurn()
+    private async Task EndTurnAsync()
     {
+        await _checkpoint();
+
         foreach (var side in new[] { Side.US, Side.USSR })
         {
             var shortfall = State.Defcon - State.Player(side).MilitaryOps;
@@ -225,6 +227,8 @@ public sealed class GameRunner
         }
 
         Victory.CheckAutomaticVictory(State);
+
+        await HeldScoringCardCheckAsync();
 
         State.US.MilitaryOps = 0;
         State.USSR.MilitaryOps = 0;
@@ -239,6 +243,55 @@ public sealed class GameRunner
 
         State.Turn++;
         State.Phase = GamePhase.TurnStart;
+    }
+
+    /// <summary>
+    /// Sequence of play F: players reveal held cards. Scoring cards may never be held;
+    /// a held one is either scored now (friendly play) or loses the game (tournament rule 11.1.2).
+    /// </summary>
+    private async Task HeldScoringCardCheckAsync()
+    {
+        while (true)
+        {
+            var unplayed = PlayableCards().Where(id => Data.Card(id).Scoring).ToList();
+            var noneLeft = unplayed.Count == 0 ? "All scoring cards are played or discarded" : null;
+
+            var detail = unplayed.Count == 0
+                ? "All scoring cards in the current deck have been played or discarded."
+                : $"Scoring cards not yet played: {string.Join(", ", unplayed.Select(id => Data.Card(id).Name))}. Scoring cards may never be held.";
+
+            var choice = await Ask.Option(null, $"End of turn {State.Turn}: both players reveal their held cards. Is either player holding a scoring card?",
+            [
+                new DecisionOption("No scoring cards held"),
+                new DecisionOption("USSR is holding a scoring card: score it now", noneLeft),
+                new DecisionOption("US is holding a scoring card: score it now", noneLeft),
+                new DecisionOption("USSR is holding a scoring card: USSR loses (tournament rule)", noneLeft),
+                new DecisionOption("US is holding a scoring card: US loses (tournament rule)", noneLeft)
+            ], detail);
+
+            if (choice == 0)
+            {
+                return;
+            }
+
+            var holder = choice is 1 or 3 ? Side.USSR : Side.US;
+
+            if (choice >= 3)
+            {
+                Victory.EndGame(State, holder.Opponent(), $"{holder.Label()} held a scoring card at the end of the turn (tournament rule 11.1.2).");
+            }
+
+            var cardId = await Ask.Card(new CardRequest
+            {
+                Actor = holder,
+                Prompt = $"Which scoring card was the {holder.Label()} holding?",
+                Eligible = unplayed
+            });
+
+            State.AddLog(holder, $"{holder.Label()} was holding {Data.Card(cardId!.Value).Name}; it is scored now.");
+            await ScoreAsync(holder, cardId.Value);
+            Victory.CheckAutomaticVictory(State);
+        }
     }
 
     // ---------------------------------------------------------------- Headline

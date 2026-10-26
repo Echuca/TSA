@@ -10,7 +10,8 @@ It doesn't replace the board, the cards or the dice. Hands stay secret, everyone
 
 ## What it does
 
-- **Walks through the turn sequence:** DEFCON improvement, dealing, headlines (in the correct order), action rounds, the required military ops check, flipping The China Card and final scoring after turn 10.
+- **Walks through the turn sequence:** DEFCON improvement, dealing, headlines (in the correct order), action rounds, the required military ops check, the held-card check, flipping The China Card and final scoring after turn 10.
+- **Checks for held scoring cards** at the end of every turn. Scoring cards may never be held, so both players reveal their held card. If one turns out to be a scoring card, you choose whether it's scored then (friendly play) or its holder loses (tournament rule).
 - **Checks every move against the rules.** Influence can only go where it's allowed, and the ops cost goes up in opponent-controlled countries. Coups and realignments respect DEFCON, NATO and the US/Japan Pact. The space race enforces its ops and attempt limits. Options that aren't allowed are greyed out with the reason shown.
 - **Works out ops values,** including Containment, Brezhnev Doctrine, Red Scare/Purge, The China Card's Asia bonus and Vietnam Revolts.
 - **Resolves all 110 card events,** including the optional cards 104–110. When an event depends on a hidden hand (Five Year Plan, Missile Envy, Terrorism and so on), the app asks which card was actually taken or discarded.
@@ -24,7 +25,7 @@ It doesn't replace the board, the cards or the dice. Hands stay secret, everyone
 3. **Enter dice.** Roll the real dice and tap the result, or tap **Roll for me**.
 4. **Check the log** to see what was applied. Events in effect are listed above it.
 
-**Undo** restarts the current step. If you hadn't entered anything in that step yet, it goes back one step instead. Use it freely; nothing is lost.
+**Undo** goes back one answer at a time: the last card picked, die entered or influence confirmed. Keep pressing it to go back further, including into earlier action rounds.
 
 **Corrections** is the escape hatch for when the table and the app disagree. You can set influence, VP, DEFCON, military ops, the space race, The China Card, events in effect and card locations by hand. Use it when you reshuffle the discard pile into the draw deck, too.
 
@@ -36,7 +37,7 @@ It doesn't replace the board, the cards or the dice. Hands stay secret, everyone
 
 Open the link in Safari, tap **Share → Add to Home Screen**, and launch it from there. It then runs full-screen and works offline.
 
-The game is saved automatically on the device after every step, so you can close the app and carry on later with **Resume saved game**. Saves don't sync between devices, and clearing Safari's website data deletes them.
+The game is saved automatically on the device after every answer, so you can close the app and carry on later with **Resume saved game**, right at the question you left on. Saves don't sync between devices, and clearing Safari's website data deletes them.
 
 ## Development
 
@@ -65,7 +66,7 @@ Every push to `main` runs [`.github/workflows/deploy-pages.yml`](.github/workflo
 ## Not yet supported
 
 - The Chinese Civil War variant and promotional cards
-- Tracking how many cards each player holds, or checking for held scoring cards at the end of a turn
+- Tracking how many cards each player holds. The end-of-turn held-card check relies on the players revealing their cards.
 - Placing influence by tapping the map view (influence is entered on the region tiles)
 
 ## Credits
