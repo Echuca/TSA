@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="TSA.Core/TSA.Core.csproj" />
+  <Project Path="TSA/TSA.csproj" />
+  <Project Path="TSA.Tests/TSA.Tests.csproj" />
+</Solution>

@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Map/card data is embedded so it loads in the browser (WASM has no file system). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Data\*.json" LogicalName="TSA.Core.Data.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TSA.Tests" />
+  </ItemGroup>
+
+</Project>
