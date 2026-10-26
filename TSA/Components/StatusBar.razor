@@ -1,0 +1,90 @@
+@* Turn, DEFCON, VP, Military Ops, Space Race and China Card at a glance. *@
+
+<header class="status-bar">
+    <div class="stat turn">
+        <label>Turn</label>
+        <b>@State.Turn<small>/10</small></b>
+        <small>@EraLabel</small>
+    </div>
+
+    <div class="stat round">
+        <label>@State.RoundLabel</label>
+        @if (State.Phase == GamePhase.ActionRounds)
+        {
+            <b class="side-@State.PhasingPlayer.Label().ToLowerInvariant()">@State.PhasingPlayer.Label()</b>
+        }
+    </div>
+
+    <div class="stat defcon defcon-@State.Defcon">
+        <label>DEFCON</label>
+        <b>@State.Defcon</b>
+        <small>@DefconNote</small>
+    </div>
+
+    <div class="stat vp @(State.VictoryPoints > 0 ? "side-us" : State.VictoryPoints < 0 ? "side-ussr" : "")">
+        <label>VP</label>
+        <b>@GameState.VpLabel(State.VictoryPoints)</b>
+    </div>
+
+    <div class="stat milops">
+        <label>Mil Ops (need @State.Defcon)</label>
+        <b>
+            <span class="side-us @(State.US.MilitaryOps >= State.Defcon ? "ok" : "")">US @State.US.MilitaryOps</span>
+            <span class="side-ussr @(State.USSR.MilitaryOps >= State.Defcon ? "ok" : "")">USSR @State.USSR.MilitaryOps</span>
+        </b>
+    </div>
+
+    <div class="stat space">
+        <label>Space Race</label>
+        <b>
+            <span class="side-us" title="@SpaceName(State.US.SpaceRacePosition)">US @State.US.SpaceRacePosition</span>
+            <span class="side-ussr" title="@SpaceName(State.USSR.SpaceRacePosition)">USSR @State.USSR.SpaceRacePosition</span>
+        </b>
+    </div>
+
+    <div class="stat china">
+        <label>China Card</label>
+        <b class="side-@State.ChinaCardOwner.Label().ToLowerInvariant()">@State.ChinaCardOwner.Label()</b>
+        <small>@(State.ChinaCardFaceUp ? "face up" : "face down")</small>
+    </div>
+
+    <div class="toolbar">
+        <button disabled="@(!CanUndo)" @onclick="OnUndo">↶ Undo</button>
+        <button @onclick="OnMap">🗺 Map</button>
+        <button @onclick="OnCorrections">Corrections</button>
+        <button @onclick="OnMenu">☰</button>
+    </div>
+</header>
+
+@code {
+    [Parameter, EditorRequired] public GameState State { get; set; } = default!;
+
+    [Parameter] public bool CanUndo { get; set; }
+
+    [Parameter] public EventCallback OnUndo { get; set; }
+
+    [Parameter] public EventCallback OnCorrections { get; set; }
+
+    [Parameter] public EventCallback OnMap { get; set; }
+
+    [Parameter] public EventCallback OnMenu { get; set; }
+
+    private string EraLabel => State.Era switch
+    {
+        CardEra.EarlyWar => "Early War",
+        CardEra.MidWar => "Mid War",
+        _ => "Late War"
+    };
+
+    private string DefconNote => State.Defcon switch
+    {
+        5 => "No restrictions",
+        4 => "No coups: Europe",
+        3 => "No coups: Europe, Asia",
+        2 => "No coups: Eur, Asia, ME",
+        _ => "Nuclear war"
+    };
+
+    private static string SpaceName(int position) =>
+        position == 0 ? "Start" : SpaceRace.Track[position - 1].Name;
+}

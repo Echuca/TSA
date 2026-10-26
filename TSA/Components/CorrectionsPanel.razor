@@ -1,0 +1,170 @@
+@* Manual fixes when the table and the app disagree. Edits a copy of the state from the
+   start of the current step; applying restarts that step. Undo reverts a correction. *@
+
+<div class="modal-backdrop">
+    <div class="modal corrections">
+        <header>
+            <h2>Corrections</h2>
+            <nav class="tabs">
+                @foreach (var tab in Tabs)
+                {
+                    <button class="@(tab == _tab ? "active" : "")" @onclick="() => _tab = tab">@tab</button>
+                }
+            </nav>
+        </header>
+
+        <p class="note">Changes apply from the start of the current step (anything entered in this step is discarded). Undo removes a correction.</p>
+
+        <div class="modal-body">
+            @switch (_tab)
+            {
+                case "Tracks":
+                    <div class="track-grid">
+                        <Stepper Label="VP (+US / −USSR)" Value="Draft.VictoryPoints" Min="-19" Max="19" ValueChanged="v => Draft.VictoryPoints = v" />
+                        <Stepper Label="DEFCON" Value="Draft.Defcon" Min="2" Max="5" ValueChanged="v => Draft.Defcon = v" />
+                        <Stepper Label="US Military Ops" Value="Draft.US.MilitaryOps" Min="0" Max="5" ValueChanged="v => Draft.US.MilitaryOps = v" />
+                        <Stepper Label="USSR Military Ops" Value="Draft.USSR.MilitaryOps" Min="0" Max="5" ValueChanged="v => Draft.USSR.MilitaryOps = v" />
+                        <Stepper Label="US Space Race" Value="Draft.US.SpaceRacePosition" Min="0" Max="8" ValueChanged="v => Draft.US.SpaceRacePosition = v" />
+                        <Stepper Label="USSR Space Race" Value="Draft.USSR.SpaceRacePosition" Min="0" Max="8" ValueChanged="v => Draft.USSR.SpaceRacePosition = v" />
+                        <Stepper Label="US action rounds taken" Value="Draft.US.ActionRoundsTaken" Min="0" Max="8" ValueChanged="v => Draft.US.ActionRoundsTaken = v" />
+                        <Stepper Label="USSR action rounds taken" Value="Draft.USSR.ActionRoundsTaken" Min="0" Max="8" ValueChanged="v => Draft.USSR.ActionRoundsTaken = v" />
+                    </div>
+                    <div class="row">
+                        <label>China Card</label>
+                        <button class="@(Draft.ChinaCardOwner == Side.USSR ? "on" : "")" @onclick="() => Draft.ChinaCardOwner = Side.USSR">USSR</button>
+                        <button class="@(Draft.ChinaCardOwner == Side.US ? "on" : "")" @onclick="() => Draft.ChinaCardOwner = Side.US">US</button>
+                        <button class="@(Draft.ChinaCardFaceUp ? "on" : "")" @onclick="() => Draft.ChinaCardFaceUp = !Draft.ChinaCardFaceUp">
+                            @(Draft.ChinaCardFaceUp ? "Face up" : "Face down")
+                        </button>
+                    </div>
+                    break;
+
+                case "Influence":
+                    <nav class="region-tabs">
+                        @foreach (var region in Enum.GetValues<Region>())
+                        {
+                            <button class="region-tab region-@region.ToString().ToLowerInvariant() @(region == _region ? "active" : "")" @onclick="() => _region = region">@region.Label()</button>
+                        }
+                    </nav>
+                    <table class="influence-table">
+                        <tbody>
+                            @foreach (var country in Draft.Countries.Where(c => c.Region == _region))
+                            {
+                                <tr class="control-@country.Controller.ToString().ToLowerInvariant()">
+                                    <td>@country.Name <small>(@country.Stability)</small></td>
+                                    <td class="side-us">
+                                        <button @onclick="() => country.RemoveInfluence(Side.US, 1)">−</button>
+                                        <b>@country.UsInfluence</b>
+                                        <button @onclick="() => country.AddInfluence(Side.US, 1)">+</button>
+                                    </td>
+                                    <td class="side-ussr">
+                                        <button @onclick="() => country.RemoveInfluence(Side.USSR, 1)">−</button>
+                                        <b>@country.UssrInfluence</b>
+                                        <button @onclick="() => country.AddInfluence(Side.USSR, 1)">+</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    break;
+
+                case "Effects":
+                    @if (Draft.Effects.Count == 0)
+                    {
+                        <p>No events in effect.</p>
+                    }
+                    @foreach (var effect in Draft.Effects.ToList())
+                    {
+                        <div class="row">
+                            <span>@GameData.Instance.Card(effect.CardId).Name (@effect.Side.Label()@(effect.ThisTurnOnly ? ", this turn" : ""))</span>
+                            <button class="secondary" @onclick="() => Draft.Effects.Remove(effect)">Remove</button>
+                        </div>
+                    }
+                    <div class="row">
+                        <select @bind="_newEffect">
+                            <option value="0">Add an effect…</option>
+                            @foreach (var card in GameData.Instance.Cards.Where(c => c.Permanent || c.RemoveAfterEvent).OrderBy(c => c.Name))
+                            {
+                                <option value="@card.Id">@card.Name</option>
+                            }
+                        </select>
+                        <button class="side-us" disabled="@(_newEffect == 0)" @onclick="() => AddEffect(Side.US)">for US</button>
+                        <button class="side-ussr" disabled="@(_newEffect == 0)" @onclick="() => AddEffect(Side.USSR)">for USSR</button>
+                    </div>
+                    break;
+
+                case "Cards":
+                    <div class="row">
+                        <button class="secondary" @onclick="Reshuffle">Discard pile reshuffled into the draw deck</button>
+                        <input class="search" type="search" placeholder="Search…" @bind="_cardSearch" @bind:event="oninput" />
+                    </div>
+                    <table class="card-table">
+                        <tbody>
+                            @foreach (var card in GameData.Instance.Cards.Where(c => !c.IsChinaCard && Matches(c)).OrderBy(c => c.Id))
+                            {
+                                <tr>
+                                    <td>#@card.Id</td>
+                                    <td class="side-@card.Side.Label().ToLowerInvariant()">@card.Name</td>
+                                    <td>
+                                        <select value="@Draft.LocationOf(card.Id)" @onchange="e => Draft.CardLocations[card.Id] = Enum.Parse<CardLocation>(e.Value!.ToString()!)">
+                                            @foreach (var location in Enum.GetValues<CardLocation>())
+                                            {
+                                                <option value="@location">@LocationLabel(location)</option>
+                                            }
+                                        </select>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    break;
+            }
+        </div>
+
+        <footer class="actions">
+            <button class="secondary" @onclick="OnCancel">Cancel</button>
+            <button class="primary" @onclick="() => OnApply.InvokeAsync(Draft)">Apply corrections</button>
+        </footer>
+    </div>
+</div>
+
+@code {
+    private static readonly string[] Tabs = ["Tracks", "Influence", "Effects", "Cards"];
+    private string _tab = Tabs[0];
+    private Region _region = Region.Europe;
+    private int _newEffect;
+    private string _cardSearch = string.Empty;
+
+    [Parameter, EditorRequired] public GameState Draft { get; set; } = default!;
+
+    [Parameter] public EventCallback<GameState> OnApply { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private void AddEffect(Side side)
+    {
+        Draft.AddEffect(_newEffect, side);
+        _newEffect = 0;
+    }
+
+    private void Reshuffle()
+    {
+        foreach (var id in Draft.CardLocations.Where(kv => kv.Value == CardLocation.Discard).Select(kv => kv.Key).ToList())
+        {
+            Draft.CardLocations[id] = CardLocation.Available;
+        }
+    }
+
+    private bool Matches(CardDefinition card) =>
+        string.IsNullOrWhiteSpace(_cardSearch) ||
+        card.Name.Contains(_cardSearch.Trim(), StringComparison.OrdinalIgnoreCase) ||
+        card.Id.ToString() == _cardSearch.Trim();
+
+    private static string LocationLabel(CardLocation location) => location switch
+    {
+        CardLocation.Available => "Deck / hand",
+        CardLocation.NotInGame => "Not in game",
+        CardLocation.InPlay => "In play",
+        _ => location.ToString()
+    };
+}

@@ -1,0 +1,20 @@
+<div class="stepper-field">
+    <label>@Label</label>
+    <div class="stepper">
+        <button disabled="@(Value <= Min)" @onclick="() => ValueChanged.InvokeAsync(Value - 1)">−</button>
+        <b>@Value</b>
+        <button disabled="@(Value >= Max)" @onclick="() => ValueChanged.InvokeAsync(Value + 1)">+</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public int Value { get; set; }
+
+    [Parameter] public int Min { get; set; }
+
+    [Parameter] public int Max { get; set; } = 99;
+
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+}

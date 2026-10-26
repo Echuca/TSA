@@ -1,0 +1,46 @@
+@* Events in effect and the game log. *@
+
+@if (State.Effects.Count > 0)
+{
+    <section class="effects">
+        <h3>In effect</h3>
+        <div class="effect-list">
+            @foreach (var effect in State.Effects)
+            {
+                <span class="effect side-@effect.Side.Label().ToLowerInvariant()" title="@GameData.Instance.Card(effect.CardId).Text">
+                    @GameData.Instance.Card(effect.CardId).Name
+                    @if (effect.Data is not null && effect.CardId == CardIds.Chernobyl)
+                    {
+                        <small>(@effect.Data)</small>
+                    }
+                    @if (effect.ThisTurnOnly)
+                    {
+                        <small>this turn</small>
+                    }
+                </span>
+            }
+        </div>
+    </section>
+}
+
+<section class="log">
+    <h3>Log</h3>
+    <ol reversed>
+        @foreach (var entry in State.Log.AsEnumerable().Reverse().Take(_showAll ? int.MaxValue : 40))
+        {
+            <li class="side-@(entry.Side?.Label().ToLowerInvariant() ?? "none")">
+                <span class="when">T@(entry.Turn) @entry.Round</span> @entry.Text
+            </li>
+        }
+    </ol>
+    @if (!_showAll && State.Log.Count > 40)
+    {
+        <button class="link" @onclick="() => _showAll = true">Show all @State.Log.Count entries</button>
+    }
+</section>
+
+@code {
+    private bool _showAll;
+
+    [Parameter, EditorRequired] public GameState State { get; set; } = default!;
+}

@@ -1,0 +1,163 @@
+@* Renders the engine's current question and sends the answer back to the session. *@
+
+@{
+    var request = Session.Pending;
+    var state = Session.State!;
+}
+
+<section class="decision">
+    @if (Session.Error is { } error)
+    {
+        <div class="error">
+            <b>Something went wrong:</b> @error
+            <p>Tap <b>Undo</b> to go back to the start of this step.</p>
+        </div>
+    }
+    else if (state.GameOver)
+    {
+        <div class="game-over">
+            <h2>@(state.Winner is { } winner ? $"{winner.Label()} wins!" : "Draw")</h2>
+            <p>@state.GameOverReason</p>
+            <p>Tap <b>Undo</b> if this was a mistake.</p>
+        </div>
+    }
+    else if (request is null)
+    {
+        <div class="waiting">Working…</div>
+    }
+    else
+    {
+        <header class="decision-head">
+            @if (request.Actor is { } actor)
+            {
+                <span class="chip side-@actor.Label().ToLowerInvariant()">@actor.Label()</span>
+            }
+            <h2>@request.Prompt</h2>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(request.Detail))
+        {
+            <p class="detail">@request.Detail</p>
+        }
+
+        @switch (request)
+        {
+            case OptionRequest options:
+                <div class="options">
+                    @for (var i = 0; i < options.Options.Count; i++)
+                    {
+                        var index = i;
+                        var option = options.Options[i];
+                        <button class="big" disabled="@(!option.Enabled)" @onclick="() => Session.Answer(index)">
+                            @option.Label
+                            @if (!option.Enabled)
+                            {
+                                <small>@option.DisabledReason</small>
+                            }
+                        </button>
+                    }
+                </div>
+                break;
+
+            case DieRequest die:
+                @if (die.Target is not null)
+                {
+                    <p class="target">@die.Target</p>
+                }
+                <div class="dice">
+                    @for (var face = 1; face <= 6; face++)
+                    {
+                        var value = face;
+                        <button class="die" @onclick="() => Session.Answer(value)">@value</button>
+                    }
+                </div>
+                <button class="link" @onclick="() => Session.Answer(Random.Shared.Next(1, 7))">Roll for me</button>
+                break;
+
+            case CardRequest cards:
+                <CardPicker State="state" Request="cards" OnPicked="id => Session.Answer(id)" />
+                break;
+
+            case CountryRequest country:
+                <div class="choices">
+                    @foreach (var id in country.Eligible)
+                    {
+                        <button class="@(Interaction.Selected.Contains(id) ? "on" : "")" @onclick="() => Tap(id)">@state.Country(id).Name</button>
+                    }
+                </div>
+                <div class="actions">
+                    @if (country.NoneLabel is not null)
+                    {
+                        <button class="secondary" @onclick="() => Session.Answer(null)">@country.NoneLabel</button>
+                    }
+                    <button class="primary" disabled="@(Interaction.Selected.Count != 1)"
+                            @onclick="() => Session.Answer(Interaction.Selected[0])">
+                        Confirm @(Interaction.Selected.Count == 1 ? state.Country(Interaction.Selected[0]).Name : "")
+                    </button>
+                </div>
+                break;
+
+            case CountriesRequest many:
+                <p class="status">Choose @(many.Min == many.Max ? many.Max.ToString() : $"{many.Min}-{many.Max}") — selected @Interaction.Selected.Count</p>
+                <div class="choices">
+                    @foreach (var id in many.Eligible)
+                    {
+                        <button class="@(Interaction.Selected.Contains(id) ? "on" : "")" @onclick="() => Tap(id)">@state.Country(id).Name</button>
+                    }
+                </div>
+                <div class="actions">
+                    <button class="primary"
+                            disabled="@(Interaction.Selected.Count < many.Min || Interaction.Selected.Count > many.Max)"
+                            @onclick="() => Session.Answer(Interaction.Selected.ToList())">
+                        Confirm
+                    </button>
+                </div>
+                break;
+
+            case InfluenceRequest influence:
+                var invalid = influence.Validate(Interaction.Allocation);
+                <p class="status">@influence.Status(Interaction.Allocation)</p>
+                @if (Interaction.Allocation.Count > 0)
+                {
+                    <ul class="allocation">
+                        @foreach (var (id, amount) in Interaction.Allocation)
+                        {
+                            <li>@state.Country(id).Name @(influence.Remove ? "−" : "+")@amount</li>
+                        }
+                    </ul>
+                }
+                @if (invalid is not null)
+                {
+                    <p class="invalid">@invalid</p>
+                }
+                <div class="actions">
+                    <button class="secondary" disabled="@(Interaction.Allocation.Count == 0)" @onclick="Clear">Reset</button>
+                    <button class="primary" disabled="@(invalid is not null)"
+                            @onclick="() => Session.Answer(new Dictionary<string, int>(Interaction.Allocation))">
+                        Confirm
+                    </button>
+                </div>
+                break;
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public GameSession Session { get; set; } = default!;
+
+    [Parameter, EditorRequired] public BoardInteraction Interaction { get; set; } = default!;
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task Tap(string id)
+    {
+        Interaction.Tap(id);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Clear()
+    {
+        Interaction.Clear();
+        await OnChanged.InvokeAsync();
+    }
+}

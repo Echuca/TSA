@@ -1,0 +1,87 @@
+@* Pick a card: search by name or number, tap to preview, then confirm. *@
+
+<div class="card-picker">
+    <input class="search" type="search" placeholder="Search name or number…" @bind="_search" @bind:event="oninput" />
+
+    <div class="card-list">
+        @foreach (var id in Filtered)
+        {
+            var card = GameData.Instance.Card(id);
+            <button class="card side-@card.Side.Label().ToLowerInvariant() @(id == _selected ? "on" : "")" @onclick="() => _selected = id">
+                <span class="ops">@(card.Scoring ? "S" : Ops(id))</span>
+                <span class="name">@card.Name@(card.RemoveAfterEvent ? "*" : "")</span>
+                <span class="num">#@card.Id</span>
+            </button>
+        }
+        @if (!Filtered.Any())
+        {
+            <p class="empty">No matching cards.</p>
+        }
+    </div>
+
+    @if (_selected is { } selected)
+    {
+        var card = GameData.Instance.Card(selected);
+        <div class="card-preview side-@card.Side.Label().ToLowerInvariant()">
+            <b>@card.Name</b> · @(card.Scoring ? "Scoring" : $"{card.Ops} Ops") · @card.Side.Label() event
+            <p>@card.Text</p>
+        </div>
+    }
+
+    <div class="actions">
+        @if (Request.NoneLabel is not null)
+        {
+            <button class="secondary" @onclick="() => OnPicked.InvokeAsync(null)">@Request.NoneLabel</button>
+        }
+        <button class="primary" disabled="@(_selected is null)" @onclick="() => OnPicked.InvokeAsync(_selected)">
+            Confirm @(_selected is { } id2 ? GameData.Instance.Card(id2).Name : "")
+        </button>
+    </div>
+</div>
+
+@code {
+    private string _search = string.Empty;
+    private int? _selected;
+    private CardRequest? _lastRequest;
+
+    [Parameter, EditorRequired] public GameState State { get; set; } = default!;
+
+    [Parameter, EditorRequired] public CardRequest Request { get; set; } = default!;
+
+    [Parameter] public EventCallback<int?> OnPicked { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_lastRequest, Request))
+        {
+            _lastRequest = Request;
+            _search = string.Empty;
+            _selected = Request.Eligible.Count == 1 ? Request.Eligible[0] : null;
+        }
+    }
+
+    private IEnumerable<int> Filtered =>
+        Request.Eligible.Where(id =>
+        {
+            if (string.IsNullOrWhiteSpace(_search))
+            {
+                return true;
+            }
+
+            var card = GameData.Instance.Card(id);
+            var term = _search.Trim();
+            return card.Name.Contains(term, StringComparison.OrdinalIgnoreCase) || card.Id.ToString() == term;
+        });
+
+    private string Ops(int id)
+    {
+        if (Request.Actor is not { } actor || actor == Side.Neutral)
+        {
+            return GameData.Instance.Card(id).Ops.ToString();
+        }
+
+        var value = OpsCalculator.Value(State, actor, id);
+        var max = OpsCalculator.MaxValue(State, actor, id);
+        return max > value ? $"{value}+" : value.ToString();
+    }
+}

@@ -1,0 +1,114 @@
+﻿@page "/"
+@inject GameSession Session
+@implements IDisposable
+
+<PageTitle>Twilight Struggle Assistant</PageTitle>
+
+@if (!_ready)
+{
+    <div class="start"><p>Loading…</p></div>
+}
+else if (Session.State is null || _showMenu)
+{
+    <div class="start">
+        <h1>Twilight Struggle Assistant</h1>
+        <p>Record each move as you play the board game. The assistant applies the rules, tracks the board and stops illegal plays.</p>
+
+        @if (Session.State is not null)
+        {
+            <button class="big" @onclick="() => _showMenu = false">Back to the game</button>
+        }
+        else if (Session.HasSavedGame)
+        {
+            <button class="big primary" @onclick="Resume">Resume saved game</button>
+        }
+
+        <fieldset class="new-game">
+            <legend>New game</legend>
+            <label class="check">
+                <input type="checkbox" @bind="_optionalCards" /> Include optional cards (104-110)
+            </label>
+            <Stepper Label="Extra US setup Influence (bid)" Value="_bonus" Min="0" Max="10" ValueChanged="v => _bonus = v" />
+            <button class="big @(Session.State is null && !Session.HasSavedGame ? "primary" : "")" @onclick="NewGame">
+                Start new game@(Session.State is not null || Session.HasSavedGame ? " (replaces the saved game)" : "")
+            </button>
+        </fieldset>
+
+        @if (Session.Error is { } error)
+        {
+            <p class="error">@error</p>
+        }
+    </div>
+}
+else
+{
+    var state = Session.State;
+    _interaction.Sync(Session.Pending);
+
+    <div class="game">
+        <StatusBar State="state" CanUndo="Session.CanUndo" OnUndo="Undo" OnCorrections="OpenCorrections" OnMap="() => _showMap = true" OnMenu="() => _showMenu = true" />
+
+        <div class="game-main">
+            <div class="left">
+                <DecisionPanel Session="Session" Interaction="_interaction" OnChanged="StateHasChanged" />
+                <SidePanels State="state" />
+            </div>
+            <div class="right">
+                <Board State="state" Interaction="_interaction" OnChanged="StateHasChanged" />
+            </div>
+        </div>
+    </div>
+
+    @if (_draft is not null)
+    {
+        <CorrectionsPanel Draft="_draft" OnApply="ApplyCorrections" OnCancel="() => _draft = null" />
+    }
+
+    @if (_showMap)
+    {
+        <MapView State="state" OnClose="() => _showMap = false" />
+    }
+}
+
+@code {
+    private readonly BoardInteraction _interaction = new();
+    private bool _ready;
+    private bool _showMenu;
+    private bool _showMap;
+    private bool _optionalCards;
+    private int _bonus;
+    private GameState? _draft;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.InitializeAsync();
+        _ready = true;
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task Resume()
+    {
+        await Session.ResumeAsync();
+        _showMenu = false;
+    }
+
+    private async Task NewGame()
+    {
+        await Session.NewGameAsync(_optionalCards, _bonus);
+        _showMenu = false;
+    }
+
+    private Task Undo() => Session.UndoAsync();
+
+    private void OpenCorrections() => _draft = Session.CorrectionDraft();
+
+    private async Task ApplyCorrections(GameState corrected)
+    {
+        _draft = null;
+        await Session.ApplyCorrectionAsync(corrected, "manual adjustment");
+    }
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

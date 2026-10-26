@@ -1,0 +1,116 @@
+@* The physical board with every counter where it should be: influence (control side up when
+   controlled), Turn, Action Round, DEFCON, VP, Military Ops, Space Race and events in effect. *@
+
+<div class="map-overlay">
+    <header class="map-toolbar">
+        <h2>Board</h2>
+        <div class="zoom">
+            @foreach (var (label, zoom) in Zooms)
+            {
+                <button class="@(_zoom == zoom ? "on" : "")" @onclick="() => _zoom = zoom">@label</button>
+            }
+        </div>
+        <button class="primary" @onclick="OnClose">Close</button>
+    </header>
+
+    <div class="map-scroll">
+        <div class="map" style="width: @(_zoom)%">
+            <img class="map-board" src="images/board.jpg" alt="Twilight Struggle board" />
+
+            @foreach (var country in State.Countries)
+            {
+                if (!BoardLayout.Boxes.TryGetValue(country.Id, out var box))
+                {
+                    continue;
+                }
+
+                @foreach (var token in InfluenceTokens(country, Side.US, box.X + BoardLayout.UsCenterX, box.Y + BoardLayout.InfluenceCenterY))
+                {
+                    @token
+                }
+                @foreach (var token in InfluenceTokens(country, Side.USSR, box.X + BoardLayout.UssrCenterX, box.Y + BoardLayout.InfluenceCenterY))
+                {
+                    @token
+                }
+            }
+
+            @(Token("turn", BoardLayout.Turn(State.Turn), title: $"Turn {State.Turn}"))
+
+            @if (State.Phase == GamePhase.ActionRounds)
+            {
+                var side = State.PhasingPlayer;
+                var round = State.Player(side).ActionRoundsTaken + 1;
+                @(Token(side == Side.US ? "ar-us" : "ar-ussr", BoardLayout.ActionRound(round), title: $"{side.Label()} action round {round}"))
+            }
+
+            @(Token("defcon", BoardLayout.Defcon(State.Defcon), title: $"DEFCON {State.Defcon}"))
+            @(Token("vp", BoardLayout.VictoryPoints(State.VictoryPoints), title: $"VP {GameState.VpLabel(State.VictoryPoints)}"))
+
+            @(Token("milops-us", BoardLayout.MilitaryOps(State.US.MilitaryOps), -14, -10, title: $"US Military Ops {State.US.MilitaryOps}"))
+            @(Token("milops-ussr", BoardLayout.MilitaryOps(State.USSR.MilitaryOps), 14, 10, title: $"USSR Military Ops {State.USSR.MilitaryOps}"))
+
+            @(Token("space-us", BoardLayout.Space(State.US.SpaceRacePosition), -14, -10, title: "US Space Race"))
+            @(Token("space-ussr", BoardLayout.Space(State.USSR.SpaceRacePosition), 14, 10, title: "USSR Space Race"))
+
+            @foreach (var (region, position) in BoardLayout.RegionBoxes)
+            {
+                if (Defcon.RegionRestricted(State, region))
+                {
+                    @(Token("restricted", position, title: $"No coups or realignments in {region.Label()}"))
+                }
+            }
+        </div>
+    </div>
+
+    <footer class="map-events">
+        <span class="china side-@State.ChinaCardOwner.Label().ToLowerInvariant()">
+            China Card: @State.ChinaCardOwner.Label() (@(State.ChinaCardFaceUp ? "face up" : "face down"))
+        </span>
+        @foreach (var effect in State.Effects.DistinctBy(e => e.CardId))
+        {
+            var card = GameData.Instance.Card(effect.CardId);
+            @if (BoardLayout.EventTokens.Contains(effect.CardId))
+            {
+                <img class="event-token" src="images/tokens/event-@(effect.CardId).png" alt="@card.Name" title="@card.Name: @card.Text" />
+            }
+            else
+            {
+                <span class="effect side-@effect.Side.Label().ToLowerInvariant()" title="@card.Text">@card.Name</span>
+            }
+        }
+    </footer>
+</div>
+
+@code {
+    private static readonly (string Label, int Zoom)[] Zooms = [("Fit", 100), ("150%", 150), ("200%", 200), ("300%", 300)];
+    private int _zoom = 100;
+
+    [Parameter, EditorRequired] public GameState State { get; set; } = default!;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Influence counters for one side, control side up if that side controls the country.</summary>
+    private IEnumerable<RenderFragment> InfluenceTokens(Country country, Side side, int x, int y)
+    {
+        var face = country.IsControlledBy(side) ? "control" : "influence";
+        var prefix = side == Side.US ? "us" : "ussr";
+        var offset = 0;
+
+        foreach (var value in BoardLayout.Counters(country.Influence(side)))
+        {
+            yield return Token($"{prefix}-{face}-{value}", (x, y), offset, -offset, BoardLayout.InfluenceTokenSize,
+                $"{country.Name}: {side.Label()} {country.Influence(side)}");
+            offset += 6;
+        }
+    }
+
+    private static RenderFragment Token(string image, (int X, int Y) centre, int dx = 0, int dy = 0, int size = BoardLayout.TrackTokenSize, string? title = null)
+    {
+        var left = BoardLayout.Percent(centre.X + dx - size / 2.0, BoardLayout.Width);
+        var top = BoardLayout.Percent(centre.Y + dy - size / 2.0, BoardLayout.Height);
+        var width = BoardLayout.Percent(size, BoardLayout.Width);
+
+        return @<img class="token" src="images/tokens/@(image).png" alt="@title" title="@title"
+                     style="left: @left; top: @top; width: @width" />;
+    }
+}

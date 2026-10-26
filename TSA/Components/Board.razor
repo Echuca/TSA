@@ -1,0 +1,144 @@
+@* The map as region tabs of country tiles. Shows influence/control, and in decision
+   modes highlights eligible countries with tap-to-select or +/- steppers. *@
+
+<div class="board">
+    <nav class="region-tabs">
+        @foreach (var region in Regions)
+        {
+            var eligible = EligibleIn(region);
+            <button class="region-tab region-@region.ToString().ToLowerInvariant() @(region == _region ? "active" : "")"
+                    @onclick="() => _region = region">
+                @region.Label()
+                @if (eligible > 0)
+                {
+                    <span class="badge">@eligible</span>
+                }
+            </button>
+        }
+    </nav>
+
+    @if (Interaction.Request is InfluenceRequest influence)
+    {
+        <div class="board-hint">
+            Tap <b>+</b>/<b>−</b> on highlighted countries to @(influence.Remove ? "remove" : "add")
+            <span class="side-@influence.InfluenceSide.Label().ToLowerInvariant()">@influence.InfluenceSide.Label()</span> Influence.
+        </div>
+    }
+    else if (Interaction.Request is CountryRequest or CountriesRequest)
+    {
+        <div class="board-hint">Tap a highlighted country to select it.</div>
+    }
+
+    <div class="tiles">
+        @foreach (var country in State.Countries.Where(c => c.Region == _region))
+        {
+            var eligible = Interaction.IsEligible(country.Id);
+            var selected = Interaction.Selected.Contains(country.Id);
+            var delta = Interaction.Delta(country.Id);
+            var reason = Interaction.ReasonFor(country.Id);
+
+            <div class="tile control-@country.Controller.ToString().ToLowerInvariant() @(Interaction.IsActive && !eligible ? "dim" : "") @(eligible ? "eligible" : "") @(selected ? "selected" : "")"
+                 @onclick="() => Tap(country.Id)">
+                <div class="tile-head @(country.Battleground ? "bg" : "")">
+                    <span class="tile-name">@country.Name</span>
+                    <span class="stability">@country.Stability</span>
+                </div>
+                <div class="tile-influence">
+                    <span class="inf us @(Shown(country, Side.US) > 0 ? "" : "zero")">@Shown(country, Side.US)</span>
+                    <span class="inf ussr @(Shown(country, Side.USSR) > 0 ? "" : "zero")">@Shown(country, Side.USSR)</span>
+                </div>
+                @if (Interaction.Request is InfluenceRequest && eligible)
+                {
+                    <div class="stepper" @onclick:stopPropagation="true">
+                        <button disabled="@(delta == 0)" @onclick="() => Change(country, -1)">−</button>
+                        <span class="delta">@(delta == 0 ? "" : (Remove ? "-" : "+") + delta)</span>
+                        <button disabled="@(!Interaction.CanIncrement(country))" @onclick="() => Change(country, 1)">+</button>
+                    </div>
+                }
+                @if (reason is not null)
+                {
+                    <div class="tile-reason">@reason</div>
+                }
+                @if (country.AdjacentSuperpower is { } superpower)
+                {
+                    <div class="tile-flag">↔ @superpower.Label()</div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly Region[] Regions = Enum.GetValues<Region>();
+    private Region _region = Region.Europe;
+    private DecisionRequest? _lastRequest;
+
+    [Parameter, EditorRequired] public GameState State { get; set; } = default!;
+
+    [Parameter, EditorRequired] public BoardInteraction Interaction { get; set; } = default!;
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool Remove => Interaction.Request is InfluenceRequest { Remove: true };
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_lastRequest, Interaction.Request))
+        {
+            return;
+        }
+
+        _lastRequest = Interaction.Request;
+
+        // Jump to a region that has something to tap.
+        if (Interaction.IsActive && EligibleIn(_region) == 0)
+        {
+            var first = Regions.FirstOrDefault(r => EligibleIn(r) > 0, _region);
+            _region = first;
+        }
+    }
+
+    private int EligibleIn(Region region) =>
+        Interaction.Eligible.Count(id => State.Country(id).Region == region);
+
+    /// <summary>Influence including the not-yet-confirmed change.</summary>
+    private int Shown(Country country, Side side)
+    {
+        var value = country.Influence(side);
+
+        if (Interaction.Request is InfluenceRequest r && r.InfluenceSide == side)
+        {
+            value += r.Remove ? -Interaction.Delta(country.Id) : Interaction.Delta(country.Id);
+        }
+
+        return value;
+    }
+
+    private async Task Change(Country country, int amount)
+    {
+        if (amount > 0)
+        {
+            Interaction.Increment(country);
+        }
+        else
+        {
+            Interaction.Decrement(country);
+        }
+
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Tap(string countryId)
+    {
+        if (Interaction.Request is InfluenceRequest && Interaction.CanIncrement(State.Country(countryId)))
+        {
+            Interaction.Increment(State.Country(countryId));
+        }
+        else
+        {
+            Interaction.Tap(countryId);
+        }
+
+        await OnChanged.InvokeAsync();
+    }
+}
