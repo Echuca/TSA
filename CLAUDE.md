@@ -39,7 +39,13 @@ dotnet publish TSA/TSA.csproj -c Release                       # static site in 
 ```
 
 The dev server does not hot-reload engine changes reliably; restart it after rebuilding.
-To use on an iPad: host the published `wwwroot` on any static host (or the dev server over the LAN with `--urls http://0.0.0.0:5054`), open in Safari, Share → Add to Home Screen.
+
+**Deployment:** GitHub Pages at https://echuca.github.io/TSA/ via `.github/workflows/deploy-pages.yml` on every push to `main` (test → publish → `tools/prepare-pages.mjs` → deploy).
+- `prepare-pages.mjs` sets `<base href>` to `/TSA/` and re-hashes `index.html` in `service-worker-assets.js`. The offline cache verifies those hashes, so any other post-publish edit to a cached file must be re-hashed the same way.
+- It also adds `404.html` and `.nojekyll`.
+- `service-worker.published.js` takes its base path from `self.registration.scope`, so the same build works at `/` and `/TSA/`.
+- To check a Pages build locally, serve `publish/wwwroot` under `/TSA/`. Avoid port 5060: browsers block it.
+- The README is user-facing; keep it in sync when features change.
 
 ## Architecture (read this before changing the engine)
 
